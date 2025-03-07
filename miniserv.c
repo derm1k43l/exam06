@@ -1,15 +1,17 @@
+#include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/select.h>
 
-
-typedef struct client {
-    int id;
-    char  txt[99999];
+typedef struct client
+{
+    int		id;
+    char	txt[99999];
 } t_client;
 
 t_client clients[1024];
@@ -24,14 +26,14 @@ void err()
     exit(1);
 }
 
-void sendToAll(int ignore)
+void stl(int blabla)
 {
-    for (int i = 0; i <= fdMax; i++)
-        if (FD_ISSET(i, &fdOut) && i != ignore)
+    for (int i = 0; i<=fdMax; i++)
+        if (FD_ISSET(i, &fdOut) && i != blabla)
             send(i, buffIn, strlen(buffIn), 0);
 }
 
-int main(int ac, char **av)
+int main(int ac, char*av[])
 {
     if (ac != 2)
     {
@@ -41,75 +43,96 @@ int main(int ac, char **av)
 
     struct sockaddr_in addr;
     bzero(&clients, sizeof(clients));
-	bzero(&addr, sizeof(addr));
-    FD_ZERO(&fdAct);
+    bzero(&addr, sizeof(addr));
+	FD_ZERO(&fdAct);
 
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0)
-        err();
+	int sockFd = socket(AF_INET, SOCK_STREAM, 0); 
+	if (sockFd < 0)
+		err();
+	
+	fdMax = sockFd;
+	FD_SET(sockFd, &fdAct);
 
-    fdMax = sockfd;
-    FD_SET(sockfd, &fdAct);
+	socklen_t addrLen = sizeof(addr);
+	addr.sin_family = AF_INET; 
+	addr.sin_addr.s_addr = htonl(2130706433); //127.0.0.1
+	addr.sin_port = htons(atoi(av[1])); 
 
-    socklen_t addr_len = sizeof(addr);
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(2130706433);
-    addr.sin_port = htons(atoi(av[1]));
+	if ((bind(sockFd, (const struct sockaddr *)&addr, sizeof(addr))) < 0)
+		err();
+	if (listen(sockFd, 128) < 0) 
+		err();
 
-    if ((bind(sockfd, (const struct sockaddr *)&addr, sizeof(addr))) < 0)
-        err();
-    if (listen(sockfd, 128) < 0)
-        err();
-
-    while (1)
-    {
-        fdIn = fdOut = fdAct;
-        if (select(fdMax + 1, &fdIn, &fdOut, NULL, NULL) < 0)
-            continue ;
-        for (int s = 0; s <= fdMax; s++)
-        {
-            if (FD_ISSET(s, &fdIn) && s == sockfd)
-            {
-                int clientSock = accept(sockfd, (struct sockaddr *)&addr, &addr_len);
-                if (clientSock < 0)
-                    continue ;
-                fdMax = (clientSock > fdMax) ? clientSock : fdMax;
-                clients[clientSock].id = idIndex++;
-                FD_SET(clientSock, &fdAct);
-                sprintf(buffIn, "server: client %d just arrived\n", clients[clientSock].id);
-                sendToAll(clientSock);
-                break ;
-            }
-            if (FD_ISSET(s, &fdIn) && s != sockfd)
-            {
-                int res = recv(s, buffOut, 42 * 4096, 0);
-                if (res <= 0)
-                {
-                    sprintf(buffIn, "server: client %d just left\n", clients[s].id);
-                    sendToAll(s);
-                    FD_CLR(s, &fdAct);
-                    close(s);
-						  bzero(clients[s].txt, strlen(clients[s].txt));
-                    break ;
-                }
-                else
-                {
-                    for (int i = 0, j = strlen(clients[s].txt); i < res; i++, j++)
-                    {
-                        clients[s].txt[j] = buffOut[i];
-                        if (clients[s].txt[j] == '\n')
-                        {
-                            clients[s].txt[j] = '\0';
-                            sprintf(buffIn, "client %d: %s\n", clients[s].id, clients[s].txt);
-                            sendToAll(s);
-                            bzero(&clients[s].txt, strlen(clients[s].txt));
-                            j = -1;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-    }
-    return 0;
+	while (42 == 42)
+	{
+		fdIn = fdAct = fdOut;
+		if (select(fdMax + 1, &fdIn, &fdOut, NULL, NULL) < 0)
+			continue;
+		for (int s = 0; s <= fdMax; s++)
+		{
+			if(FD_ISSET(s, &fdIn) && s == sockFd)
+			{
+				int clientSock = accept(sockFd, (struct sockaddr *)&addr, &addrLen);
+				if (clientSock < 0)
+					continue;
+				fdMax = (clientSock > fdMax) ? clientSock : fdMax;
+				clients[clientSock].id = idIndex++;
+				FD_SET(clientSock, &fdAct);
+				sprintf(buffIn, "server: client %d just arrived\n", clients[clientSock].id);
+				stl(clientSock);
+				break;
+			}
+			if (FD_ISSET(s, &fdIn) && s != sockFd)
+			{
+				int readB = recv(s, buffOut, 42 * 4096, 0);
+				if (readB <= 0)
+				{
+					sprintf(buffIn, "server: client %d just left\n", clients[s].id);
+					stl(s);
+					FD_CLR(s, &fdAct);
+					close(s);
+					bzero(clients[s].txt, strlen(clients[s].txt));
+					break;
+				}
+				else
+				{
+					for (int i = 0, j = strlen(clients[s].txt); i < readB; i++, j++)
+					{
+						clients[s].txt[j] = buffOut[i];
+						if (clients[s].txt[j] == '\n')
+						{
+							clients[s].txt[j] = 0;
+							sprintf(buffIn, "client %d: %s\n", clients[s].id, clients[s].txt);
+							stl(s);
+							bzero(clients[s].txt, strlen(clients[s].txt));
+							j = -1;
+						}
+					}
+					break;
+				}
+			}
+		}
+	}
+	return 0;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
